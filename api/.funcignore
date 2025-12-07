@@ -1,0 +1,35 @@
+# Azure Functions ignore file
+# Only exclude files that shouldn't be deployed
+
+# Exclude local development files
+local.settings.json
+.vscode/
+.idea/
+
+# Exclude test files
+*.test.js
+*.spec.js
+test/
+tests/
+__tests__/
+
+# Exclude documentation
+*.md
+README*
+LICENSE*
+
+# Exclude git files
+.git/
+.gitignore
+
+# Exclude CI/CD files
+.github/
+azure-pipelines.yml
+.circleci/
+
+# Exclude other build artifacts
+*.log
+.DS_Store
+Thumbs.db
+
+

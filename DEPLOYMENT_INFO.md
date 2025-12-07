@@ -118,3 +118,5 @@ Server=vacations-sql-4819.database.windows.net;Database=vacations-db;User Id=vac
 2. Verify connection string in environment variables
 3. Test connection using Azure Portal query editor
 
+
+

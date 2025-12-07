@@ -26,7 +26,7 @@ async function getUserFromToken(token) {
   if (!decoded) return null;
   
   const users = await query(
-    `SELECT u.id, u.email, p.name, p.role, p.department, p.position, p.leader_name, p.join_date, 
+    `SELECT u.id, u.email, p.name, p.role, p.department, p.position, p.join_date, 
             p.balance, p.has_project, p.created_at, p.updated_at
      FROM users u
      LEFT JOIN profiles p ON u.id = p.id
@@ -44,7 +44,7 @@ async function getUserFromToken(token) {
     role: user.role || 'Collaborator',
     department: user.department,
     position: user.position,
-    leader_name: user.leader_name,
+    leader_name: user.leader_name || null,
     join_date: user.join_date,
     balance: user.balance || 0,
     has_project: user.has_project || false,

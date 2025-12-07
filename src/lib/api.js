@@ -39,43 +39,101 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config);
-      const data = await response.json();
+      
+      // Check if response has content and is JSON
+      const contentType = response.headers.get('content-type');
+      const isJson = contentType && contentType.includes('application/json');
+      
+      let data = null;
+      
+      // Only try to parse JSON if content exists and is JSON
+      if (isJson) {
+        const text = await response.text();
+        if (text.trim()) {
+          try {
+            data = JSON.parse(text);
+          } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            throw new Error(`Failed to parse response: ${parseError.message}`);
+          }
+        }
+      } else {
+        // For non-JSON responses, read as text to get error message
+        const text = await response.text();
+        if (text.trim()) {
+          data = { error: text };
+        }
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        let errorMessage = data?.error || data?.message;
+        
+        // Provide specific messages for common HTTP errors
+        if (!errorMessage) {
+          if (response.status === 404) {
+            // Check if we're in development mode
+            const isDev = import.meta.env.DEV || window.location.hostname === 'localhost';
+            if (isDev) {
+              errorMessage = `API endpoint not found (404). Make sure Azure Functions is running:\n1. Open a terminal\n2. Run: cd api && func start\n3. Wait for Functions to start on http://localhost:7071`;
+            } else {
+              errorMessage = `API endpoint not found (404). Please check if the API is properly deployed.`;
+            }
+          } else if (response.status === 500) {
+            errorMessage = `Internal server error (500). Please try again later.`;
+          } else if (response.status === 0 || response.status === 'ECONNREFUSED') {
+            const isDev = import.meta.env.DEV || window.location.hostname === 'localhost';
+            if (isDev) {
+              errorMessage = `Cannot connect to API. Azure Functions is not running.\n\nTo start it:\n1. Open a terminal\n2. Run: cd api && func start\n3. Wait for Functions to start on http://localhost:7071`;
+            } else {
+              errorMessage = `Cannot connect to API server. Please check if the API is properly deployed.`;
+            }
+          } else {
+            errorMessage = `HTTP error! status: ${response.status}`;
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       return { data, error: null };
     } catch (error) {
       console.error('API request error:', error);
-      return { data: null, error };
+      
+      // Handle network errors (when Azure Functions isn't running)
+      if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('ECONNREFUSED'))) {
+        const isDev = import.meta.env.DEV || window.location.hostname === 'localhost';
+        if (isDev) {
+          const networkError = new Error(`Cannot connect to Azure Functions API.\n\nMake sure Azure Functions is running:\n1. Open a terminal\n2. Run: cd api && func start\n3. Wait for Functions to start on http://localhost:7071`);
+          return { data: null, error: networkError };
+        }
+      }
+      
+      // If it's already an Error object, use it; otherwise create one
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      return { data: null, error: errorObj };
     }
   }
 
-  // Authentication methods
-  async signUp(email, password, name, role) {
+  // Authentication methods (Magic Link)
+  async signUp(email, name, role) {
     const { data, error } = await this.request('/auth/signup', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name, role }),
+      body: JSON.stringify({ email, name, role }),
     });
 
-    if (data && data.token) {
-      this.setToken(data.token);
-    }
-
+    // Magic link flow doesn't return token immediately
+    // Token will be set after verification via verifyMagicLink
     return { data, error };
   }
 
-  async signIn(email, password) {
+  async signIn(email) {
     const { data, error } = await this.request('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email }),
     });
 
-    if (data && data.token) {
-      this.setToken(data.token);
-    }
-
+    // Magic link flow doesn't return token immediately
+    // Token will be set after verification via verifyMagicLink
     return { data, error };
   }
 
@@ -108,6 +166,41 @@ class ApiClient {
   async signOut() {
     this.setToken(null);
     return { data: null, error: null };
+  }
+
+  // Magic Link methods
+  async requestMagicLink(email) {
+    return await this.request('/auth/magic-link-request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async verifyMagicLink(token) {
+    const { data, error } = await this.request(`/auth-verify?token=${encodeURIComponent(token)}`, {
+      method: 'GET',
+    });
+
+    if (data && data.token) {
+      this.setToken(data.token);
+    }
+
+    return { data, error };
+  }
+
+  // Password Reset methods
+  async requestPasswordReset(email) {
+    return await this.request('/auth/password-reset-request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async confirmPasswordReset(token, newPassword) {
+    return await this.request('/auth/password-reset-confirm', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
   }
 
   // Profile methods

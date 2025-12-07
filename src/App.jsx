@@ -3,6 +3,8 @@ import auroraImage from '../aurora.jpg';
 import { api, auth } from './lib/api';
 import Auth from './components/Auth';
 import ProfileCompletion from './components/ProfileCompletion';
+import MagicLinkVerify from './components/MagicLinkVerify';
+import PasswordResetConfirm from './components/PasswordResetConfirm';
 import { useTranslation } from './hooks/useTranslation';
 import { useLanguage } from './contexts/LanguageContext';
 
@@ -1541,6 +1543,70 @@ export default function LeaveManagementApp() {
     const hasLeader = profile.leader_name && profile.leader_name.trim().length > 0;
     return hasFullName && hasLeader;
   };
+
+  // Check URL parameters for magic link or password reset
+  const urlParams = new URLSearchParams(window.location.search);
+  const magicToken = urlParams.get('token');
+  const type = urlParams.get('type');
+  const path = window.location.pathname;
+
+  // Handle /magic route for magic link verification
+  if (path === '/magic' && magicToken) {
+    return (
+      <MagicLinkVerify
+        token={magicToken}
+        onSuccess={handleAuthSuccess}
+        onError={(error) => {
+          console.error('Magic link verification error:', error);
+        }}
+      />
+    );
+  }
+
+  // Handle legacy /auth/verify route for backward compatibility
+  if (path === '/auth/verify' && magicToken && type === 'magic') {
+    return (
+      <MagicLinkVerify
+        token={magicToken}
+        onSuccess={handleAuthSuccess}
+        onError={(error) => {
+          console.error('Magic link verification error:', error);
+        }}
+      />
+    );
+  }
+
+  // Show password reset confirmation page
+  if (path === '/auth/reset-password' && magicToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50" style={{ background: 'linear-gradient(135deg, #1e293b 0%, #e42935 100%)' }}>
+        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="w-32 h-16 mx-auto mb-4 flex items-center justify-center">
+              <img 
+                src="https://salmon-sea-0b3caa70f.1.azurestaticapps.net/src/fic/Logo-Forte_Full_logo-H.png" 
+                alt="FORTE" 
+                className="w-full h-full object-contain" 
+              />
+            </div>
+            <h1 className="text-2xl font-bold" style={{ color: COLORS.darkGray }}>
+              Reset Password
+            </h1>
+          </div>
+          <PasswordResetConfirm
+            token={magicToken}
+            onSuccess={() => {
+              // Redirect to login after successful password reset
+              window.location.href = '/';
+            }}
+            onBack={() => {
+              window.location.href = '/';
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   // Show auth if not logged in
   if (!session || !currentUser) {

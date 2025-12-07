@@ -93,3 +93,5 @@ After deployment:
 - URL: `https://vacations.fortelabs.cloud`
 - Default URL: `https://gray-river-049f4f80f.3.azurestaticapps.net`
 
+
+

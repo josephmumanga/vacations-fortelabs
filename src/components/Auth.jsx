@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { api } from '../lib/api';
-import { LogIn, AlertCircle, Loader2 } from 'lucide-react';
+import { LogIn, AlertCircle, Loader2, Mail, Key } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
 import { useLanguage } from '../contexts/LanguageContext';
+import MagicLinkRequest from './MagicLinkRequest';
+import PasswordResetRequest from './PasswordResetRequest';
 
 const COLORS = {
   primaryRed: '#e42935',
@@ -19,6 +21,9 @@ export default function Auth({ onAuthSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isSignup, setIsSignup] = useState(false);
+  const [authMode, setAuthMode] = useState('magic-link'); // 'password' or 'magic-link'
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   const validateEmailDomain = (email) => {
     const allowedDomain = '@forteinnovation.mx';
@@ -29,6 +34,7 @@ export default function Auth({ onAuthSuccess }) {
     e.preventDefault();
     setError('');
     setLoading(true);
+    setMagicLinkSent(false);
 
     // Validate email domain
     if (!validateEmailDomain(email)) {
@@ -38,61 +44,98 @@ export default function Auth({ onAuthSuccess }) {
     }
 
     try {
-      if (isSignup) {
-        // Sign up new user
-        const name = email === 'centro.id@forteinnovation.mx' ? 'Centro ID' : email.split('@')[0];
-        const role = email === 'centro.id@forteinnovation.mx' ? 'Admin' : 'Collaborator';
-        
-        const { data, error } = await api.signUp(
-          email.trim().toLowerCase(),
-          password,
-          name,
-          role
-        );
+      if (authMode === 'magic-link') {
+        // Magic link flow
+        if (isSignup) {
+          // Sign up new user
+          const name = email === 'centro.id@forteinnovation.mx' ? 'Centro ID' : email.split('@')[0];
+          const role = email === 'centro.id@forteinnovation.mx' ? 'Admin' : 'Collaborator';
+          
+          const { data, error } = await api.signUp(
+            email.trim().toLowerCase(),
+            name,
+            role
+          );
 
-        if (error) {
-          // If user already exists, try to sign in instead
-          if (error.message && (error.message.includes('already exists') || error.message.includes('already registered'))) {
-            setError('User already exists. Please sign in instead.');
-            setIsSignup(false);
+          if (error) {
+            setError(error.message || 'Failed to send magic link. Please try again.');
             setLoading(false);
             return;
           }
-          setError(error.message || 'Sign up error');
-          setLoading(false);
-          return;
-        }
 
-        if (data?.user && data?.profile) {
-          // After signup, pass profile to onAuthSuccess so App can check if completion is needed
-          onAuthSuccess({
-            user: data.user,
-            profile: data.profile,
-          });
+          setMagicLinkSent(true);
           setLoading(false);
-          return;
+        } else {
+          // Sign in existing user
+          const { data, error } = await api.signIn(
+            email.trim().toLowerCase()
+          );
+
+          if (error) {
+            setError(error.message || 'Failed to send magic link. Please try again.');
+            setLoading(false);
+            return;
+          }
+
+          setMagicLinkSent(true);
+          setLoading(false);
         }
       } else {
-        // Sign in existing user
-        const { data, error } = await api.signIn(
-          email.trim().toLowerCase(),
-          password
-        );
+        // Password fallback mode (for backward compatibility)
+        if (isSignup) {
+          // Sign up new user with password
+          const name = email === 'centro.id@forteinnovation.mx' ? 'Centro ID' : email.split('@')[0];
+          const role = email === 'centro.id@forteinnovation.mx' ? 'Admin' : 'Collaborator';
+          
+          const { data, error } = await api.signUp(
+            email.trim().toLowerCase(),
+            password,
+            name,
+            role
+          );
 
-        if (error) {
-          setError(error.message || t('loginError'));
-          setLoading(false);
-          return;
-        }
+          if (error) {
+            if (error.message && (error.message.includes('already exists') || error.message.includes('already registered'))) {
+              setError('User already exists. Please sign in instead.');
+              setIsSignup(false);
+              setLoading(false);
+              return;
+            }
+            setError(error.message || 'Sign up error. Please try again.');
+            setLoading(false);
+            return;
+          }
 
-        if (data?.user && data?.profile) {
-          onAuthSuccess({
-            user: data.user,
-            profile: data.profile,
-          });
+          if (data?.user && data?.profile) {
+            onAuthSuccess({
+              user: data.user,
+              profile: data.profile,
+            });
+            setLoading(false);
+            return;
+          }
         } else {
-          setError(t('loginError'));
-          setLoading(false);
+          // Sign in existing user with password
+          const { data, error } = await api.signIn(
+            email.trim().toLowerCase(),
+            password
+          );
+
+          if (error) {
+            setError(error.message || t('loginError'));
+            setLoading(false);
+            return;
+          }
+
+          if (data?.user && data?.profile) {
+            onAuthSuccess({
+              user: data.user,
+              profile: data.profile,
+            });
+          } else {
+            setError(t('loginError'));
+            setLoading(false);
+          }
         }
       }
     } catch (err) {
@@ -130,63 +173,153 @@ export default function Auth({ onAuthSuccess }) {
           </p>
         </div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
-              <AlertCircle size={18} />
-              <span className="text-sm">{error}</span>
+        {showPasswordReset ? (
+          <PasswordResetRequest
+            onSuccess={() => setShowPasswordReset(false)}
+            onBack={() => setShowPasswordReset(false)}
+          />
+        ) : (
+          <>
+            {/* Auth Mode Toggle */}
+            <div className="flex gap-2 mb-4 p-1 bg-slate-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('magic-link');
+                  setMagicLinkSent(false);
+                }}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition ${
+                  authMode === 'magic-link'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <Mail size={16} />
+                  <span>Magic Link</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('password');
+                  setMagicLinkSent(false);
+                }}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition ${
+                  authMode === 'password'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <Key size={16} />
+                  <span>Password</span>
+                </div>
+              </button>
             </div>
-          )}
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">
-              {t('email')}
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="usuario@forteinnovation.mx"
-              required
-              className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">
-              {t('password')}
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 px-4 text-white font-medium rounded-lg shadow-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            style={{ backgroundColor: COLORS.primaryRed }}
-          >
-            {loading ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                <span>{isSignup ? 'Creating account...' : t('signingIn')}</span>
-              </>
+            {magicLinkSent ? (
+              <div className="space-y-4">
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <Mail size={18} className="mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-medium">Magic link sent!</p>
+                      <p className="text-sm mt-1">
+                        Check your email ({email}) for a magic link to {isSignup ? 'complete signup' : 'sign in'}. The link will expire in 30 minutes.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMagicLinkSent(false);
+                    setEmail('');
+                  }}
+                  className="w-full text-sm text-slate-600 hover:text-slate-800 underline"
+                >
+                  Send another link
+                </button>
+              </div>
             ) : (
-              <>
-                <LogIn size={18} />
-                <span>{isSignup ? 'Create Account' : t('signIn')}</span>
-              </>
+              <form onSubmit={handleAuth} className="space-y-4">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <span className="text-sm whitespace-pre-line">{error}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    {t('email')}
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="usuario@forteinnovation.mx"
+                    required
+                    className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={loading}
+                  />
+                </div>
+
+                {authMode === 'password' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-slate-700">
+                        {t('password')}
+                      </label>
+                      {!isSignup && (
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswordReset(true)}
+                          className="text-xs text-blue-600 hover:text-blue-800 underline"
+                        >
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required={authMode === 'password'}
+                      className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 px-4 text-white font-medium rounded-lg shadow-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  style={{ backgroundColor: COLORS.primaryRed }}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>{authMode === 'magic-link' ? 'Sending magic link...' : (isSignup ? 'Creating account...' : t('signingIn'))}</span>
+                    </>
+                  ) : (
+                    <>
+                      {authMode === 'magic-link' ? <Mail size={18} /> : <LogIn size={18} />}
+                      <span>{authMode === 'magic-link' ? (isSignup ? 'Send Magic Link' : 'Send Magic Link') : (isSignup ? 'Create Account' : t('signIn'))}</span>
+                    </>
+                  )}
+                </button>
+              </form>
             )}
-          </button>
-        </form>
+          </>
+        )}
 
         <div className="mt-6 space-y-3">
           <button
