@@ -6,12 +6,11 @@
     },
     {
       "route": "/*",
-      "serve": "/index.html",
-      "statusCode": 200
+      "rewrite": "/index.html"
     }
   ],
   "navigationFallback": {
-    "fallback": "/index.html"
+    "rewrite": "/index.html"
   },
   "responseOverrides": {
     "404": {
